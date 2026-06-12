@@ -2,7 +2,7 @@
 
 ## Source
 WEDA (Wrist-worn Edge Device Accelerometer) fall detection dataset.  
-Original: [https://github.com/... (add link)](https://github.com/joaojtmarques/WEDA-FALL)
+Original: (https://github.com/joaojtmarques/WEDA-FALL)
 
 ## Preprocessing
 - Segmented into 3s windows at 100Hz (300 samples per window)
