@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FFT Audio Equalizer — Signal Processing Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #ffffff;
+      --bg2: #f5f4f0;
+      --bg3: #eeede8;
+      --text: #1a1a1a;
+      --text2: #6b6a66;
+      --text3: #9b9a96;
+      --border: rgba(0,0,0,0.12);
+      --border2: rgba(0,0,0,0.22);
+      --info-bg: #e6f1fb;
+      --info-text: #0c447c;
+      --radius: 8px;
+      --radius-lg: 12px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e1e;
+        --bg2: #2a2a2a;
+        --bg3: #333333;
+        --text: #f0efeb;
+        --text2: #a0a09a;
+        --text3: #6b6a66;
+        --border: rgba(255,255,255,0.12);
+        --border2: rgba(255,255,255,0.22);
+        --info-bg: #0c2d4a;
+        --info-text: #85b7eb;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    .container { max-width: 780px; margin: 0 auto; }
+
+    h1 { font-size: 22px; font-weight: 500; margin-bottom: 6px; }
+    .subtitle { font-size: 14px; color: var(--text2); margin-bottom: 24px; line-height: 1.6; }
+
+    .info-box {
+      background: var(--info-bg);
+      color: var(--info-text);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--info-bg);
+      color: var(--info-text);
+      margin-bottom: 6px;
+    }
+
+    .card {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+
+    .section-lbl {
+      font-size: 11px;
+      color: var(--text3);
+      letter-spacing: .05em;
+      font-weight: 500;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    #drop-zone {
+      border: 1.5px dashed var(--border2);
+      border-radius: var(--radius-lg);
+      padding: 40px 16px;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 16px;
+      transition: background .15s;
+    }
+    #drop-zone:hover, #drop-zone.dragover { background: var(--info-bg); }
+    #drop-zone .icon { font-size: 40px; margin-bottom: 10px; }
+    #drop-zone .dz-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+    #drop-zone .dz-sub { font-size: 13px; color: var(--text2); }
+
+    canvas {
+      width: 100%;
+      display: block;
+      border-radius: var(--radius);
+      border: 0.5px solid var(--border);
+      background: var(--bg2);
+    }
+
+    .freq-axis {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      padding: 0 2px;
+    }
+    .freq-axis span { font-size: 10px; color: var(--text3); }
+
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    button {
+      background: transparent;
+      border: 0.5px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 7px 14px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: background .12s;
+    }
+    button:hover { background: var(--bg2); }
+    button:active { transform: scale(0.98); }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 4px;
+      background: var(--bg3);
+      border-radius: 2px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--text);
+      margin-top: -7px;
+    }
+    input[type=range][orient=vertical], input[type=range].vertical {
+      writing-mode: vertical-lr;
+      direction: rtl;
+      width: 28px;
+      height: 100px;
+    }
+
+    #seek { width: 100%; }
+
+    .filename-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    #file-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+    #time-display { font-size: 12px; color: var(--text2); flex-shrink: 0; }
+
+    .eq-row {
+      display: flex;
+      gap: 4px;
+      align-items: flex-end;
+      padding: 8px 0 4px;
+    }
+    .band-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+    }
+    .band-col label {
+      font-size: 10px;
+      color: var(--text2);
+      text-align: center;
+      line-height: 1.3;
+    }
+    .gain-val { font-size: 11px; font-weight: 500; min-width: 36px; text-align: center; }
+
+    .meter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .meter-name { font-size: 11px; min-width: 68px; }
+    .meter-wrap {
+      flex: 1;
+      height: 6px;
+      background: var(--bg3);
+      border-radius: 3px;
+      overflow: hidden;
+      border: 0.5px solid var(--border);
+    }
+    .meter-bar { height: 100%; border-radius: 3px; transition: width .08s linear; width: 0%; }
+    .meter-db { font-size: 10px; color: var(--text2); min-width: 38px; text-align: right; }
+
+    .eq-axis {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text3);
+      margin-top: 4px;
+    }
+
+    footer {
+      margin-top: 32px;
+      font-size: 12px;
+      color: var(--text3);
+      text-align: center;
+      line-height: 1.8;
+    }
+    footer a { color: var(--info-text); text-decoration: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>FFT Audio Equalizer — Signal Processing Demo</h1>
+  <p class="subtitle">
+    Upload any MP3 or WAV. See the real-time frequency spectrum, understand how an equalizer
+    uses band filters to boost or cut frequencies, and connect this to the FFT concept.
+  </p>
+
+  <div class="info-box">
+    <span class="badge">The idea</span><br>
+    What your ears hear as a single sound is many sine waves added together — each at a different
+    frequency. The <strong>FFT (Fast Fourier Transform)</strong> splits that mixed signal back into
+    its components. An equalizer uses this: each slider controls a <em>BiquadFilter</em> that boosts
+    or cuts a specific frequency band before the audio reaches your speakers.
+  </div>
+
+  <div id="drop-zone" onclick="document.getElementById('file-in').click()">
+    <div class="icon">🎵</div>
+    <div class="dz-title">Drop an MP3 or WAV here</div>
+    <div class="dz-sub">or click to browse — file stays on your device, nothing is uploaded</div>
+    <input type="file" id="file-in" accept="audio/*" style="display:none">
+  </div>
+
+  <div id="player-section" style="display:none">
+
+    <div class="card">
+      <div class="filename-row">
+        <span id="file-name"></span>
+        <span id="time-display">0:00 / 0:00</span>
+      </div>
+      <input type="range" id="seek" min="0" max="100" value="0" step="0.1">
+      <div class="transport">
+        <button id="btn-play" onclick="togglePlay()">▶ Play</button>
+        <button onclick="resetEQ()">Reset EQ</button>
+        <span style="font-size:11px;color:var(--text3);margin-left:auto">Web Audio API + FFT</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span class="section-lbl" style="margin-bottom:0">Live frequency spectrum (FFT output)</span>
+        <span style="font-size:11px;background:var(--info-bg);color:var(--info-text);padding:2px 10px;border-radius:20px;font-weight:500">Reading post-EQ signal</span>
+      </div>
+      <canvas id="cv-fft" height="140"></canvas>
+      <div class="freq-axis">
+        <span>20 Hz</span>
+        <span style="color:#e74c3c">Bass &lt;300 Hz</span>
+        <span style="color:#2980b9">Mids 300–4k Hz</span>
+        <span style="color:#27ae60">Highs &gt;4k Hz</span>
+        <span>20 kHz</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-lbl">Equalizer — drag sliders to boost / cut each band</div>
+      <div class="eq-row" id="eq-bands"></div>
+      <div class="eq-axis">
+        <span>+12 dB (boost)</span>
+        <span>0 dB (flat)</span>
+        <span>−40 dB (kill)</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-lbl">Band energy — what you're changing in real time</div>
+      <div id="energy-meters"></div>
+    </div>
+
+    <div class="info-box" style="margin-top:0">
+      <span class="badge">Signal chain</span><br>
+      Audio file → <code>decodeAudioData()</code> → 7× <code>BiquadFilterNode</code> (chained) →
+      <code>AnalyserNode</code> (4096-point FFT) → speakers.<br>
+      The spectrum shows the FFT <em>after</em> your EQ — drag a slider and watch that frequency
+      region rise or fall on the chart.
+    </div>
+
+  </div>
+
+  <footer>
+    Built for the Qualcomm × Atria Workshop series · Uses the browser's built-in
+    <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API" target="_blank">Web Audio API</a>
+    · No data leaves your device
+  </footer>
+
+</div>
+
+<script>
+const BANDS_DEF = [
+  { name:'Sub Bass', freq:60,    type:'lowshelf',  color:'#c0392b', range:'20–80 Hz'   },
+  { name:'Bass',     freq:200,   type:'peaking',   color:'#e74c3c', range:'80–300 Hz'  },
+  { name:'Low Mid',  freq:500,   type:'peaking',   color:'#d35400', range:'300–800 Hz' },
+  { name:'Mid',      freq:1500,  type:'peaking',   color:'#2980b9', range:'800–2k Hz'  },
+  { name:'High Mid', freq:4000,  type:'peaking',   color:'#1a5fa8', range:'2k–6k Hz'   },
+  { name:'Presence', freq:8000,  type:'peaking',   color:'#1a7a3c', range:'6k–12k Hz'  },
+  { name:'Treble',   freq:16000, type:'highshelf', color:'#27ae60', range:'12k+ Hz'    },
+];
+
+const NYQUIST_BINS = [
+  [0,3],[4,12],[13,30],[31,60],[61,120],[121,240],[241,512]
+];
+
+let actx, src, analyser, filters = [], gainVals = new Array(BANDS_DEF.length).fill(0);
+let audioBuffer = null, isPlaying = false, startTime = 0, pauseAt = 0, animId = null;
+const seekBar = document.getElementById('seek');
+
+function buildEQUI() {
+  const row = document.getElementById('eq-bands');
+  const meters = document.getElementById('energy-meters');
+  row.innerHTML = ''; meters.innerHTML = '';
+
+  BANDS_DEF.forEach((b, i) => {
+    const col = document.createElement('div');
+    col.className = 'band-col';
+    col.innerHTML = `
+      <span class="gain-val" id="gv${i}" style="color:${b.color}">0 dB</span>
+      <input type="range" class="vertical" min="-40" max="12" step="1" value="0" id="eq${i}">
+      <label style="color:${b.color}">${b.name}<br><span style="font-size:9px;color:var(--text3)">${b.range}</span></label>
+    `;
+    col.querySelector('input').addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      gainVals[i] = v;
+      document.getElementById('gv' + i).textContent = (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB';
+      if (filters[i]) filters[i].gain.value = v;
+    });
+    row.appendChild(col);
+
+    const mr = document.createElement('div');
+    mr.className = 'meter-row';
+    mr.innerHTML = `
+      <span class="meter-name" style="color:${b.color}">${b.name}</span>
+      <div class="meter-wrap"><div class="meter-bar" id="mb${i}" style="background:${b.color}"></div></div>
+      <span class="meter-db" id="mv${i}">— dB</span>
+    `;
+    meters.appendChild(mr);
+  });
+}
+
+function setupAudio() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  filters = [];
+  BANDS_DEF.forEach((b, i) => {
+    const f = actx.createBiquadFilter();
+    f.type = b.type;
+    f.frequency.value = b.freq;
+    f.Q.value = 1.2;
+    f.gain.value = gainVals[i];
+    filters.push(f);
+  });
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.8;
+  for (let i = 0; i < filters.length - 1; i++) filters[i].connect(filters[i + 1]);
+  filters[filters.length - 1].connect(analyser);
+  analyser.connect(actx.destination);
+}
+
+function startFrom(offset) {
+  if (src) { try { src.stop(); } catch (e) {} src.disconnect(); }
+  src = actx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(filters[0]);
+  src.start(0, offset);
+  src.onended = () => { if (isPlaying) { isPlaying = false; updatePlayBtn(); } };
+  startTime = actx.currentTime - offset;
+  isPlaying = true;
+}
+
+function togglePlay() {
+  if (!audioBuffer) return;
+  if (actx.state === 'suspended') actx.resume();
+  if (isPlaying) {
+    pauseAt = actx.currentTime - startTime;
+    src.stop(); isPlaying = false;
+  } else {
+    if (pauseAt >= audioBuffer.duration) pauseAt = 0;
+    startFrom(pauseAt);
+  }
+  updatePlayBtn();
+}
+
+function updatePlayBtn() {
+  document.getElementById('btn-play').textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+}
+
+function resetEQ() {
+  gainVals.fill(0);
+  BANDS_DEF.forEach((_, i) => {
+    const el = document.getElementById('eq' + i);
+    if (el) el.value = 0;
+    const gv = document.getElementById('gv' + i);
+    if (gv) gv.textContent = '0 dB';
+    if (filters[i]) filters[i].gain.value = 0;
+  });
+}
+
+seekBar.addEventListener('mousedown', () => {
+  if (isPlaying) { src.stop(); isPlaying = false; }
+});
+seekBar.addEventListener('change', () => {
+  if (!audioBuffer) return;
+  pauseAt = parseFloat(seekBar.value) / 100 * audioBuffer.duration;
+  startFrom(pauseAt); isPlaying = true; updatePlayBtn();
+});
+
+function fmt(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function drawLoop() {
+  animId = requestAnimationFrame(drawLoop);
+  if (!analyser) return;
+
+  const buf = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(buf);
+
+  const cv = document.getElementById('cv-fft');
+  const W = cv.offsetWidth || 740, H = cv.height || 140;
+  if (cv.width !== W) cv.width = W;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const logMin = Math.log10(20), logMax = Math.log10(20000);
+  const sampleRate = actx ? actx.sampleRate : 44100;
+  const binHz = sampleRate / analyser.fftSize;
+
+  for (let px = 0; px < W; px++) {
+    const logF = logMin + (logMax - logMin) * (px / W);
+    const hz = Math.pow(10, logF);
+    const bin = Math.round(hz / binHz);
+    if (bin >= buf.length) continue;
+    const v = buf[bin] / 255;
+    const barH = v * (H - 6);
+    let col = hz < 300 ? '#e74c3c' : hz < 4000 ? '#2980b9' : '#27ae60';
+    ctx.fillStyle = col;
+    ctx.fillRect(px, H - barH, 1.5, barH);
+  }
+
+  const isDark = matchMedia('(prefers-color-scheme:dark)').matches;
+  ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
+  ctx.lineWidth = 0.5;
+  [60, 200, 500, 1500, 4000, 8000, 16000].forEach(f => {
+    const lf = Math.log10(f);
+    const x = (lf - logMin) / (logMax - logMin) * W;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
+    ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, x, H - 3);
+  });
+
+  BANDS_DEF.forEach((b, i) => {
+    const lo = NYQUIST_BINS[i][0], hi = NYQUIST_BINS[i][1];
+    let sum = 0;
+    for (let k = lo; k <= hi && k < buf.length; k++) sum += buf[k];
+    const avg = sum / (hi - lo + 1);
+    const pct = Math.round(avg / 255 * 100);
+    const mb = document.getElementById('mb' + i);
+    const mv = document.getElementById('mv' + i);
+    if (mb) mb.style.width = pct + '%';
+    if (mv) mv.textContent = avg > 2 ? (20 * Math.log10(avg / 255 + 0.001)).toFixed(0) + ' dB' : '— dB';
+  });
+
+  if (audioBuffer && isPlaying) {
+    const cur = actx.currentTime - startTime;
+    const pct = Math.min(100, cur / audioBuffer.duration * 100);
+    seekBar.value = pct.toFixed(2);
+    document.getElementById('time-display').textContent = fmt(cur) + ' / ' + fmt(audioBuffer.duration);
+  }
+}
+
+document.getElementById('file-in').addEventListener('change', async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const ab = await file.arrayBuffer();
+  setupAudio();
+  audioBuffer = await actx.decodeAudioData(ab);
+  pauseAt = 0; isPlaying = false;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('player-section').style.display = 'block';
+  document.getElementById('drop-zone').style.display = 'none';
+  seekBar.value = 0;
+  buildEQUI();
+  if (animId) cancelAnimationFrame(animId);
+  drawLoop();
+  togglePlay();
+});
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', async e => {
+  e.preventDefault(); dz.classList.remove('dragover');
+  const file = e.dataTransfer.files[0]; if (!file) return;
+  const ab = await file.arrayBuffer();
+  setupAudio();
+  audioBuffer = await actx.decodeAudioData(ab);
+  pauseAt = 0; isPlaying = false;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('player-section').style.display = 'block';
+  dz.style.display = 'none';
+  seekBar.value = 0;
+  buildEQUI();
+  if (animId) cancelAnimationFrame(animId);
+  drawLoop();
+  togglePlay();
+});
+</script>
+</body>
+</html>
