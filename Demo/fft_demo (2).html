@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Sound Works — FFT Explorer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #ffffff; --bg2: #f5f4f0; --bg3: #e8e7e2;
+      --text: #1a1a1a; --text2: #6b6a66; --text3: #a0a09a;
+      --border: rgba(0,0,0,0.10); --border2: rgba(0,0,0,0.20);
+      --blue-bg: #e6f1fb; --blue-text: #0c447c;
+      --r: 8px; --rl: 12px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:#1c1c1c; --bg2:#272727; --bg3:#323232;
+        --text:#f0efeb; --text2:#a0a09a; --text3:#6b6a66;
+        --border:rgba(255,255,255,0.10); --border2:rgba(255,255,255,0.20);
+        --blue-bg:#0c2d4a; --blue-text:#85b7eb;
+      }
+    }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); padding:20px 16px 60px; }
+    .wrap { max-width:760px; margin:0 auto; }
+
+    /* header */
+    .page-title { font-size:21px; font-weight:500; margin-bottom:4px; }
+    .page-sub { font-size:13px; color:var(--text2); margin-bottom:20px; line-height:1.6; }
+
+    /* story steps */
+    .story { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+    .story-step { flex:1; min-width:160px; background:var(--bg2); border-radius:var(--rl); padding:12px 14px; border:0.5px solid var(--border); }
+    .step-num { font-size:11px; font-weight:500; color:var(--text3); margin-bottom:4px; }
+    .step-title { font-size:13px; font-weight:500; margin-bottom:3px; }
+    .step-body { font-size:12px; color:var(--text2); line-height:1.5; }
+
+    /* drop zone */
+    #drop-zone { border:1.5px dashed var(--border2); border-radius:var(--rl); padding:36px 16px; text-align:center; cursor:pointer; margin-bottom:16px; transition:background .15s; }
+    #drop-zone:hover, #drop-zone.over { background:var(--blue-bg); }
+    .dz-icon { font-size:36px; margin-bottom:8px; }
+    .dz-main { font-size:14px; font-weight:500; margin-bottom:3px; }
+    .dz-sub { font-size:12px; color:var(--text2); }
+
+    /* card */
+    .card { background:var(--bg); border:0.5px solid var(--border); border-radius:var(--rl); padding:14px 16px; margin-bottom:12px; }
+    .card-title { font-size:11px; font-weight:500; color:var(--text3); letter-spacing:.05em; text-transform:uppercase; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; }
+    .tag { font-size:10px; padding:2px 8px; border-radius:20px; font-weight:500; background:var(--blue-bg); color:var(--blue-text); }
+
+    /* transport */
+    .transport { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    button { background:transparent; border:0.5px solid var(--border2); border-radius:var(--r); padding:7px 13px; font-size:12px; color:var(--text); cursor:pointer; transition:background .1s; white-space:nowrap; }
+    button:hover { background:var(--bg2); }
+    button:active { transform:scale(0.98); }
+    .btn-primary { background:var(--blue-bg); color:var(--blue-text); border-color:transparent; font-weight:500; }
+    .btn-primary:hover { opacity:.85; background:var(--blue-bg); }
+
+    /* seek */
+    #seek { width:100%; margin:10px 0 8px; }
+    input[type=range] { -webkit-appearance:none; appearance:none; background:transparent; cursor:pointer; }
+    input[type=range]::-webkit-slider-runnable-track { height:4px; background:var(--bg3); border-radius:2px; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--text); margin-top:-6px; }
+    input[type=range].vert { writing-mode:vertical-lr; direction:rtl; width:26px; height:110px; }
+
+    /* filename row */
+    .fname-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:2px; gap:8px; }
+    #file-name { font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+    #time-disp { font-size:11px; color:var(--text2); flex-shrink:0; }
+
+    /* canvases */
+    canvas { width:100%; display:block; border-radius:var(--r); border:0.5px solid var(--border); background:var(--bg2); }
+    .axis-row { display:flex; justify-content:space-between; margin-top:4px; padding:0 2px; }
+    .axis-row span { font-size:10px; color:var(--text3); }
+
+    /* EQ */
+    .eq-grid { display:flex; gap:2px; align-items:flex-end; padding:4px 0; }
+    .band { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; position:relative; }
+    .band-val { font-size:10px; font-weight:500; min-width:32px; text-align:center; line-height:1.2; }
+    .band-name { font-size:10px; text-align:center; line-height:1.3; color:var(--text2); }
+    .band-range { font-size:9px; color:var(--text3); text-align:center; }
+    .eq-scale { display:flex; justify-content:space-between; margin-top:6px; }
+    .eq-scale span { font-size:10px; color:var(--text3); }
+
+    /* energy meters */
+    .meter-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+    .m-name { font-size:12px; min-width:80px; }
+    .m-emoji { font-size:14px; min-width:22px; text-align:center; }
+    .m-wrap { flex:1; height:8px; background:var(--bg3); border-radius:4px; overflow:hidden; }
+    .m-bar { height:100%; border-radius:4px; transition:width .07s linear; width:0%; }
+    .m-word { font-size:11px; color:var(--text2); min-width:52px; text-align:right; font-weight:500; }
+
+    /* tip box */
+    .tip { background:var(--blue-bg); color:var(--blue-text); border-radius:var(--r); padding:10px 14px; font-size:12px; line-height:1.6; margin-bottom:12px; }
+    .tip b { font-weight:500; }
+
+    /* loop chips */
+    .loop-chips { display:flex; gap:6px; flex-wrap:wrap; }
+    .chip { font-size:11px; padding:4px 10px; border-radius:20px; border:0.5px solid var(--border2); cursor:pointer; color:var(--text2); background:transparent; transition:background .1s; }
+    .chip:hover { background:var(--bg2); }
+    .chip.active { background:var(--blue-bg); color:var(--blue-text); border-color:transparent; }
+
+    footer { margin-top:32px; font-size:11px; color:var(--text3); text-align:center; line-height:1.9; }
+    footer a { color:var(--blue-text); text-decoration:none; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="page-title">How Sound Works</div>
+  <p class="page-sub">Every sound you hear is a mixture of waves. This explorer lets you see and reshape that mixture in real time.</p>
+
+  <div class="story">
+    <div class="story-step">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Sound is a mix</div>
+      <div class="step-body">Like mixing paint colours, sound is many waves added together — each at a different speed (frequency).</div>
+    </div>
+    <div class="story-step">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">FFT separates them</div>
+      <div class="step-body">The spectrum chart below is the FFT — it unmixes the sound and shows you exactly which waves are present.</div>
+    </div>
+    <div class="story-step">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Equalizer reshapes it</div>
+      <div class="step-body">Each slider removes or amplifies one group of waves. Watch the spectrum change as you move a slider.</div>
+    </div>
+  </div>
+
+  <div id="drop-zone" onclick="document.getElementById('fin').click()">
+    <div class="dz-icon">🎵</div>
+    <div class="dz-main">Drop an MP3 or WAV file here</div>
+    <div class="dz-sub">or click to browse &nbsp;·&nbsp; your file never leaves your device</div>
+    <input type="file" id="fin" accept="audio/*" style="display:none">
+  </div>
+
+  <div id="player" style="display:none">
+
+    <!-- transport -->
+    <div class="card">
+      <div class="fname-row">
+        <span id="file-name"></span>
+        <span id="time-disp">0:00 / 0:00</span>
+      </div>
+      <input type="range" id="seek" min="0" max="100" value="0" step="0.1">
+      <div class="transport">
+        <button class="btn-primary" id="btn-play" onclick="togglePlay()">▶ Play</button>
+        <button onclick="restart()">↩ Restart</button>
+        <button onclick="resetEQ()">Reset sliders</button>
+        <button id="btn-loop" onclick="toggleLoop()" title="Loop on/off">🔁 Loop: Off</button>
+      </div>
+    </div>
+
+    <!-- guided tip -->
+    <div class="tip" id="tip-box">
+      <b>Try this first:</b> Press Play, then slowly drag the <b>Thump</b> slider all the way down. 
+      Watch the red bars on the spectrum shrink — and hear the bass disappear from the music.
+    </div>
+
+    <!-- jump to section chips (for demo WAV) -->
+    <div class="card" id="jump-card" style="display:none">
+      <div class="card-title">Jump to section <span class="tag">demo track only</span></div>
+      <div class="loop-chips">
+        <button class="chip" onclick="jumpTo(0)">0s — Bands appear one by one</button>
+        <button class="chip" onclick="jumpTo(8)">8s — Frequency sweep</button>
+        <button class="chip" onclick="jumpTo(20)">20s — Bass drop</button>
+        <button class="chip" onclick="jumpTo(28)">28s — Melody</button>
+        <button class="chip" onclick="jumpTo(38)">38s — Full spectrum</button>
+        <button class="chip" onclick="jumpTo(48)">48s — Grand finale</button>
+      </div>
+    </div>
+
+    <!-- waveform (time domain) -->
+    <div class="card">
+      <div class="card-title">
+        Waveform — sound over time
+        <span class="tag">time domain</span>
+      </div>
+      <canvas id="cv-wave" height="80"></canvas>
+      <div class="axis-row">
+        <span>← past</span>
+        <span>What the microphone / speaker membrane actually does — moves in and out</span>
+        <span>now →</span>
+      </div>
+    </div>
+
+    <!-- FFT spectrum -->
+    <div class="card">
+      <div class="card-title">
+        Frequency spectrum — what waves are present
+        <span class="tag">FFT output · post-EQ</span>
+      </div>
+      <canvas id="cv-fft" height="130"></canvas>
+      <div class="axis-row">
+        <span style="color:#c0392b">◼ Thump &amp; Boom (bass)</span>
+        <span style="color:#2980b9">◼ Voice &amp; Body (mids)</span>
+        <span style="color:#27ae60">◼ Sparkle &amp; Air (treble)</span>
+      </div>
+    </div>
+
+    <!-- EQ -->
+    <div class="card">
+      <div class="card-title">Equalizer — slide to reshape the sound</div>
+      <div class="eq-grid" id="eq-bands"></div>
+      <div class="eq-scale">
+        <span>▲ Louder (amplify)</span>
+        <span>— Normal (no change)</span>
+        <span>▼ Quieter (remove)</span>
+      </div>
+    </div>
+
+    <!-- energy meters -->
+    <div class="card">
+      <div class="card-title">Live energy in each band</div>
+      <div id="meters"></div>
+    </div>
+
+  </div>
+
+  <footer>
+    Built for the Qualcomm × Atria Workshop &nbsp;·&nbsp;
+    Uses the browser's <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API" target="_blank">Web Audio API</a>
+    &nbsp;·&nbsp; No data leaves your device
+  </footer>
+</div>
+
+<script>
+const BANDS = [
+  { name:'Thump',   sub:'deep thud, chest feel', freq:60,    type:'lowshelf',  color:'#c0392b', emoji:'🥁' },
+  { name:'Boom',    sub:'kick, bass guitar',      freq:200,   type:'peaking',   color:'#e74c3c', emoji:'🎸' },
+  { name:'Body',    sub:'warmth, fullness',        freq:500,   type:'peaking',   color:'#d35400', emoji:'🎺' },
+  { name:'Voice',   sub:'vocals, speech',          freq:1500,  type:'peaking',   color:'#2980b9', emoji:'🎤' },
+  { name:'Edge',    sub:'guitar bite, snare crack',freq:4000,  type:'peaking',   color:'#1a5fa8', emoji:'🎵' },
+  { name:'Sparkle', sub:'hi-hat, consonants',      freq:8000,  type:'peaking',   color:'#1a7a3c', emoji:'✨' },
+  { name:'Air',     sub:'shimmer, brightness',     freq:16000, type:'highshelf', color:'#27ae60', emoji:'🌬' },
+];
+
+const BINS = [[0,3],[4,12],[13,30],[31,60],[61,120],[121,240],[241,512]];
+const ENERGY_WORDS = v => v>80?'Very loud':v>55?'Loud':v>30?'Present':v>10?'Subtle':'Silent';
+
+let actx, src, analyser, waveAnal, filters=[], gainVals=new Array(BANDS.length).fill(0);
+let audioBuf=null, playing=false, startTime=0, pauseAt=0, animId=null, looping=false;
+const seek=document.getElementById('seek');
+
+function buildUI(){
+  const eqEl=document.getElementById('eq-bands');
+  const mEl=document.getElementById('meters');
+  eqEl.innerHTML=''; mEl.innerHTML='';
+  BANDS.forEach((b,i)=>{
+    const col=document.createElement('div'); col.className='band';
+    col.innerHTML=`
+      <div class="band-val" id="gv${i}" style="color:${b.color}">Normal</div>
+      <input type="range" class="vert" min="-40" max="12" step="1" value="0" id="eq${i}">
+      <div class="band-name" style="color:${b.color}">${b.emoji}<br>${b.name}</div>
+      <div class="band-range">${b.sub}</div>`;
+    col.querySelector('input').addEventListener('input',e=>{
+      const v=parseFloat(e.target.value);
+      gainVals[i]=v;
+      const label = v>=10?'Amplified':v>=2?'Boosted':v<=-30?'Removed':v<=-10?'Cut':v<=-3?'Reduced':'Normal';
+      document.getElementById('gv'+i).textContent=label;
+      document.getElementById('gv'+i).style.color = v<=-10?'#888':v>=3?b.color:b.color;
+      if(filters[i]) filters[i].gain.value=v;
+      updateTip(i,v);
+    });
+    eqEl.appendChild(col);
+
+    const mr=document.createElement('div'); mr.className='meter-row';
+    mr.innerHTML=`
+      <span class="m-emoji">${b.emoji}</span>
+      <span class="m-name" style="color:${b.color};font-size:12px">${b.name}</span>
+      <div class="m-wrap"><div class="m-bar" id="mb${i}" style="background:${b.color}"></div></div>
+      <span class="m-word" id="mw${i}">—</span>`;
+    mEl.appendChild(mr);
+  });
+}
+
+const TIPS=[
+  {i:0,lo:true,  text:'<b>Thump removed!</b> That deep chest-feel vibration is gone. In a club, this is what you feel through the floor.'},
+  {i:1,lo:true,  text:'<b>Boom cut!</b> The kick drum punch and bass guitar body have faded. The music sounds thin and weak.'},
+  {i:3,lo:true,  text:'<b>Voice cut!</b> Vocals and most instruments live here. Notice how the music sounds hollow and distant?'},
+  {i:6,hi:true,  text:'<b>Air boosted!</b> You\'re amplifying the very top of the sound — the shimmer and brightness you feel in your ears.'},
+  {i:5,hi:true,  text:'<b>Sparkle boosted!</b> Hi-hats and consonants in speech get brighter. Too much of this becomes harsh and piercing.'},
+];
+function updateTip(idx,val){
+  const match=TIPS.find(t=>t.i===idx&&((t.lo&&val<=-15)||(t.hi&&val>=8)));
+  if(match) document.getElementById('tip-box').innerHTML=match.text;
+}
+
+function setupAudio(){
+  if(!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
+  filters=[];
+  BANDS.forEach((b,i)=>{
+    const f=actx.createBiquadFilter();
+    f.type=b.type; f.frequency.value=b.freq; f.Q.value=1.2; f.gain.value=gainVals[i];
+    filters.push(f);
+  });
+  analyser=actx.createAnalyser();
+  analyser.fftSize=4096; analyser.smoothingTimeConstant=0.82;
+  waveAnal=actx.createAnalyser();
+  waveAnal.fftSize=2048; waveAnal.smoothingTimeConstant=0.5;
+  for(let i=0;i<filters.length-1;i++) filters[i].connect(filters[i+1]);
+  filters[filters.length-1].connect(analyser);
+  analyser.connect(waveAnal);
+  waveAnal.connect(actx.destination);
+}
+
+function startFrom(off){
+  if(src){try{src.stop();}catch(e){}src.disconnect();}
+  src=actx.createBufferSource();
+  src.buffer=audioBuf;
+  src.loop=looping;
+  src.connect(filters[0]);
+  src.start(0,off);
+  src.onended=()=>{ if(playing&&!looping){playing=false;updatePlayBtn();} };
+  startTime=actx.currentTime-off;
+  playing=true;
+}
+
+function togglePlay(){
+  if(!audioBuf) return;
+  if(actx.state==='suspended') actx.resume();
+  if(playing){ pauseAt=actx.currentTime-startTime; src.stop(); playing=false; }
+  else { if(pauseAt>=audioBuf.duration) pauseAt=0; startFrom(pauseAt); }
+  updatePlayBtn();
+}
+
+function restart(){
+  if(!audioBuf) return;
+  if(actx.state==='suspended') actx.resume();
+  pauseAt=0; startFrom(0); updatePlayBtn();
+}
+
+function jumpTo(sec){
+  if(!audioBuf) return;
+  if(actx.state==='suspended') actx.resume();
+  startFrom(sec); updatePlayBtn();
+}
+
+function toggleLoop(){
+  looping=!looping;
+  if(src) src.loop=looping;
+  document.getElementById('btn-loop').textContent='🔁 Loop: '+(looping?'On':'Off');
+  document.getElementById('btn-loop').style.background=looping?'var(--blue-bg)':'';
+  document.getElementById('btn-loop').style.color=looping?'var(--blue-text)':'';
+}
+
+function updatePlayBtn(){
+  document.getElementById('btn-play').textContent=playing?'⏸ Pause':'▶ Play';
+}
+
+function resetEQ(){
+  gainVals.fill(0);
+  BANDS.forEach((_,i)=>{
+    const el=document.getElementById('eq'+i); if(el) el.value=0;
+    const gv=document.getElementById('gv'+i); if(gv){gv.textContent='Normal';gv.style.color=BANDS[i].color;}
+    if(filters[i]) filters[i].gain.value=0;
+  });
+  document.getElementById('tip-box').innerHTML='<b>Reset!</b> All bands back to normal — this is how the original audio sounds without any changes.';
+}
+
+seek.addEventListener('mousedown',()=>{ if(playing){src.stop();playing=false;} });
+seek.addEventListener('change',()=>{
+  if(!audioBuf) return;
+  pauseAt=parseFloat(seek.value)/100*audioBuf.duration;
+  startFrom(pauseAt); updatePlayBtn();
+});
+
+function fmt(s){ const m=Math.floor(s/60),sc=Math.floor(s%60); return m+':'+(sc<10?'0':'')+sc; }
+
+function drawLoop(){
+  animId=requestAnimationFrame(drawLoop);
+  if(!analyser||!waveAnal) return;
+  const isDark=matchMedia('(prefers-color-scheme:dark)').matches;
+
+  /* ── waveform ── */
+  const wBuf=new Float32Array(waveAnal.fftSize);
+  waveAnal.getFloatTimeDomainData(wBuf);
+  const wc=document.getElementById('cv-wave');
+  const WW=wc.offsetWidth||740, WH=wc.height||80;
+  if(wc.width!==WW) wc.width=WW;
+  const wctx=wc.getContext('2d');
+  wctx.clearRect(0,0,WW,WH);
+  wctx.strokeStyle=isDark?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.10)';
+  wctx.lineWidth=0.5;
+  wctx.beginPath(); wctx.moveTo(0,WH/2); wctx.lineTo(WW,WH/2); wctx.stroke();
+  wctx.beginPath();
+  wctx.strokeStyle='#2980b9';
+  wctx.lineWidth=1.5;
+  const sliceW=WW/wBuf.length;
+  wBuf.forEach((v,i)=>{
+    const x=i*sliceW, y=WH/2+v*(WH*0.44);
+    i===0?wctx.moveTo(x,y):wctx.lineTo(x,y);
+  });
+  wctx.stroke();
+
+  /* ── spectrum ── */
+  const fBuf=new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(fBuf);
+  const fc=document.getElementById('cv-fft');
+  const FW=fc.offsetWidth||740, FH=fc.height||130;
+  if(fc.width!==FW) fc.width=FW;
+  const fctx=fc.getContext('2d');
+  fctx.clearRect(0,0,FW,FH);
+  const logMin=Math.log10(20), logMax=Math.log10(20000);
+  const sr=actx?actx.sampleRate:44100;
+  const binHz=sr/analyser.fftSize;
+  for(let px=0;px<FW;px++){
+    const lf=logMin+(logMax-logMin)*(px/FW);
+    const hz=Math.pow(10,lf);
+    const bin=Math.round(hz/binHz);
+    if(bin>=fBuf.length) continue;
+    const v=fBuf[bin]/255;
+    const bH=v*(FH-4);
+    fctx.fillStyle=hz<300?'#e74c3c':hz<4000?'#2980b9':'#27ae60';
+    fctx.fillRect(px,FH-bH,1.5,bH);
+  }
+  fctx.strokeStyle=isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)';
+  fctx.lineWidth=0.5;
+  [[60,'Thump'],[200,'Boom'],[500,'Body'],[1500,'Voice'],[4000,'Edge'],[8000,'Sparkle'],[16000,'Air']].forEach(([f,lbl])=>{
+    const x=((Math.log10(f)-logMin)/(logMax-logMin))*FW;
+    fctx.beginPath(); fctx.moveTo(x,0); fctx.lineTo(x,FH); fctx.stroke();
+    fctx.fillStyle=isDark?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.35)';
+    fctx.font='9px sans-serif'; fctx.textAlign='center';
+    fctx.fillText(lbl,x,FH-3);
+  });
+
+  /* ── meters ── */
+  BANDS.forEach((_,i)=>{
+    const lo=BINS[i][0], hi=BINS[i][1];
+    let sum=0; for(let k=lo;k<=hi&&k<fBuf.length;k++) sum+=fBuf[k];
+    const avg=sum/(hi-lo+1);
+    const pct=Math.round(avg/255*100);
+    const mb=document.getElementById('mb'+i); if(mb) mb.style.width=pct+'%';
+    const mw=document.getElementById('mw'+i); if(mw) mw.textContent=ENERGY_WORDS(pct);
+  });
+
+  /* ── seek + time ── */
+  if(audioBuf&&playing){
+    const cur=actx.currentTime-startTime;
+    const pct=Math.min(100,cur/audioBuf.duration*100);
+    seek.value=pct.toFixed(2);
+    document.getElementById('time-disp').textContent=fmt(cur)+' / '+fmt(audioBuf.duration);
+  }
+}
+
+async function loadFile(file){
+  const ab=await file.arrayBuffer();
+  setupAudio();
+  audioBuf=await actx.decodeAudioData(ab);
+  pauseAt=0; playing=false;
+  document.getElementById('file-name').textContent=file.name;
+  document.getElementById('player').style.display='block';
+  document.getElementById('drop-zone').style.display='none';
+  seek.value=0;
+  buildUI();
+  const isDemo=file.name.includes('fft_demo_track');
+  document.getElementById('jump-card').style.display=isDemo?'block':'none';
+  if(animId) cancelAnimationFrame(animId);
+  drawLoop();
+  togglePlay();
+}
+
+document.getElementById('fin').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) loadFile(f); });
+const dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+dz.addEventListener('drop',e=>{ e.preventDefault(); dz.classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+</script>
+</body>
+</html>
